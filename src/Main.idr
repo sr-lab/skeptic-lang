@@ -86,13 +86,11 @@ getZipf env name = getZipf' (equations env) name where
   getZipf' ((nm, eq) :: eqs') nn = if nm == nn then (Just eq) else getZipf' eqs' nn
 
 
-getObjAttr' : (json : List (String, JSON)) -> (key : String) -> Maybe JSON
-getObjAttr' ((a, b) :: xs) key = if a == key then Just b else getObjAttr' xs key
-getObjAttr' [] _ = Nothing
-
-
 getObjAttr : (json : JSON) -> (key : String) -> Maybe JSON
-getObjAttr (JObject xs) key = getObjAttr' xs key
+getObjAttr (JObject xs) key = getObjAttr' xs key where
+  getObjAttr' : (json : List (String, JSON)) -> (key : String) -> Maybe JSON
+  getObjAttr' ((a, b) :: xs) key = if a == key then Just b else getObjAttr' xs key
+  getObjAttr' [] _ = Nothing
 getObjAttr _ _  = Nothing
 
 
@@ -112,9 +110,9 @@ loadEq path = do
 |||
 ||| @env  the environment to evaluate in
 ||| @line the line to evaluate
-skepticEvalLine : (env : Environment) -> (line : String) -> IO Environment
-skepticEvalLine env line = case split (== ' ') line of
-  ("#" :: _) => pure env
+skepticEvalLineTokens : (env : Environment) -> (line : List String) -> IO Environment
+skepticEvalLineTokens env line =
+  case line of
   ["zipf", amp, alpha, "as", name] => pure (addZipf env name (MkZipf (cast amp) (cast alpha))) -- Declare Zipf equation directly.
   ["load", file, "as", name] => do
     eq <- loadEq file
@@ -135,6 +133,24 @@ skepticEvalLine env line = case split (== ' ') line of
   _ => do
     putStrLn "Parse error."
     pure env
+
+
+stripEmptyTokens : (tokens : List String) -> List String
+stripEmptyTokens tokens = filter (\x => length x > 0) tokens
+
+
+||| Evaluates a line of Skeptic assertion code.
+|||
+||| @env  the environment to evaluate in
+||| @line the line to evaluate
+skepticEvalLine : (env : Environment) -> (line : String) -> IO Environment
+skepticEvalLine env line =
+  case unpack line of
+    ('#' :: _) => pure env -- Ignore comments.
+    _ =>
+      case stripEmptyTokens (split (== ' ') line) of -- Split along spaces to create token list.
+        [] => pure env -- Blank line.
+        tokens => skepticEvalLineTokens env tokens
 
 
 skepticEvalLines : (env : Environment) -> (lines : List String) -> IO ()
