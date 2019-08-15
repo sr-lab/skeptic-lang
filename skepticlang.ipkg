@@ -1,0 +1,7 @@
+package skepticlang
+
+modules = SkepticLang
+sourcedir = src
+executable = skeptic
+main = skepticlang
+opts = "-p contrib"
