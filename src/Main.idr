@@ -13,15 +13,19 @@ load_lines path = do
     _ => pure Nothing
 
 
-||| Looks up a value by name in a list of name-value pairs.
+||| Looks up a value by key in a list of key-value pairs.
 |||
-||| @pairs  the list of name-value pairs
+||| @pairs  the list of key-value pairs
 ||| @key    the key to look up
 lookup : Eq a => (pairs : List (a, b)) -> (key : a) -> Maybe b
 lookup [] _ = Nothing
 lookup ((a, b) :: pairs') key = if a == key then Just b else lookup pairs' key
 
 
+||| Removes an entry from a list of key-value pairs, if an entry with that key exists.
+|||
+||| @pairs  the list of key-value pairs
+||| @key    the key of the item to remove
 rmId : Eq a => (pairs : List (a, b)) -> (key : a) -> List (a, b)
 rmId [] _ = []
 rmId ((a, b) :: pairs') key = if a == key then rmId pairs' key else (a, b) :: rmId pairs' key
@@ -74,6 +78,10 @@ getZipf env name = lookup (equations env) name
 
 addGroup : (env : Environment) -> (name : String) -> Environment
 addGroup env name = MkEnvironment (equations env) ((name, []) :: (groups env))
+
+
+getGroup : (env : Environment) -> (name : String) -> Maybe (List (String, Zipf))
+getGroup env name = lookup (groups env) name
 
 
 rmGroup : (env : Environment) -> (name : String) -> Environment
@@ -155,6 +163,18 @@ skepticEvalLineTokens env tokens =
           putStrLn "Could not assert this."
         else
           putStrLn "Successfully asserted this."
+      _ => putStrLn "Equation error."
+    pure env
+  ["assert", bx, x, r, by, y, "between", a, "and", b] => do
+    case (getGroup env x, getGroup env y, getRelation r) of -- Look up equations.
+      (Just x', Just y', Just r') =>
+        case (lookup x' bx, lookup y' by) of
+          (Just xx', Just yy') =>
+            if r' (slope xx' (cast a) (cast b)) (slope yy' (cast a) (cast b)) then
+              putStrLn "Could not assert this."
+            else
+              putStrLn "Successfully asserted this."
+          _ => putStrLn "ERR"
       _ => putStrLn "Equation error."
     pure env
   _ => do
