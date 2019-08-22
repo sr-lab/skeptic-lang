@@ -18,8 +18,13 @@ load_lines path = do
 ||| @pairs  the list of name-value pairs
 ||| @key    the key to look up
 lookup : Eq a => (pairs : List (a, b)) -> (key : a) -> Maybe b
-lookup [] key = Nothing
+lookup [] _ = Nothing
 lookup ((a, b) :: pairs') key = if a == key then Just b else lookup pairs' key
+
+
+rmId : Eq a => (pairs : List (a, b)) -> (key : a) -> List (a, b)
+rmId [] _ = []
+rmId ((a, b) :: pairs') key = if a == key then rmId pairs' key else (a, b) :: rmId pairs' key
 
 
 ||| Core type representing a power-law equation.
@@ -69,6 +74,21 @@ getZipf env name = lookup (equations env) name
 
 addGroup : (env : Environment) -> (name : String) -> Environment
 addGroup env name = MkEnvironment (equations env) ((name, []) :: (groups env))
+
+
+rmGroup : (env : Environment) -> (name : String) -> Environment
+rmGroup env name = MkEnvironment (equations env) (filter (\(a, b) => a /= name) (groups env))
+
+
+
+addToGroup : (env : Environment) -> (groupId : String) -> (eq : Zipf) -> (eqId : String) -> Environment
+addToGroup env groupId eq eqId =
+  case lookup (groups env) groupId of
+    Just group =>
+      let newGroup = ((eqId, eq) :: group) in
+      MkEnvironment (equations env) ((groupId, newGroup) :: (rmId (groups env) groupId))
+    Nothing => env
+
 
 
 ||| Gets the value of an attribute of a JSON object.
@@ -125,6 +145,9 @@ skepticEvalLineTokens env tokens =
         putStrLn "Could not load equation."
         pure env
   ["group", name] => pure (addGroup env name)
+  ["add", eq, "to", gr, "as", name] =>
+    case (getZipf env eq) of
+      Just z => pure (addToGroup env gr z name)
   ["assert", x, r, y, "between", a, "and", b] => do
     case (getZipf env x, getZipf env y, getRelation r) of -- Look up equations.
       (Just x', Just y', Just r') =>
