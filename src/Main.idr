@@ -198,9 +198,8 @@ skepticEvalLines _ [] = pure ()
 ||| @path the lines to evaluate
 skepticEvalFile : (path : String) -> IO ()
 skepticEvalFile path = do
-  dir <- currentDir
-  lines <- load_lines path
-  let absDirPath = toAbsPath dir (dirName path)
+  absDirPath <- resolveAbsPath (dirName path)
+  lines <- loadLines path
   case lines of
     Just lines' => skepticEvalLines (MkEnvironment absDirPath [] []) lines'
     Nothing => putStrLn "File read error."

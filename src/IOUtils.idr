@@ -5,20 +5,28 @@ module SkepticLang.IOUtils
 
 
 ||| Loads lines from a text file.
+|||
 ||| @path   the path to the file
-load_lines : (path : String) -> IO (Maybe (List String))
-load_lines path = do
+loadLines : (path : String) -> IO (Maybe (List String))
+loadLines path = do
   txt <- readFile path
   case txt of
     Right txt' => pure (Just (lines txt'))
     _ => pure Nothing
 
 
+||| Joins a list of strings with the specified delimiter.
+|||
+||| @delim  the delimiter
+||| @strs   the list of strings
 unsplit : (delim : String) -> (strs : List String) -> String
 unsplit _ [] = ""
 unsplit delim (str :: strs') = str ++ delim ++ unsplit delim strs'
 
 
+||| Gets the directory portion of a given file path.
+|||
+||| @path the file path
 dirName : (path : String) -> String
 dirName path =
   case split (== '/') path of -- Split path.
@@ -26,25 +34,44 @@ dirName path =
     _ => ""
 
 
+||| Checks if a path is terminated with a slash.
+|||
+||| @path the path to check
 isSlashTerminated : (path : String) -> Bool
-isSlashTerminated path =
-  case last' (unpack path) of
-    Just '/' => True
-    _ => False
+isSlashTerminated path = last' (unpack path) == Just '/'
 
+
+||| Joins two paths together.
+|||
+||| @x the base path
+||| @y the path to append
 joinPaths : (x : String) -> (y : String) -> String
 joinPaths x y = x ++ (if isSlashTerminated x then "" else "/") ++ y
 
 
+||| Returns true if the given path is absolute.
+|||
+||| @path the path to check
 isAbsPath : (path : String) -> Bool
-isAbsPath path =
-  case unpack path of
-    ('/' :: _) => True
-    _ => False
+isAbsPath path = head' (unpack path) == Just '/'
 
-toAbsPath : (base : String) -> (given : String) -> String
-toAbsPath base given =
-  if isAbsPath given then
-    given
+
+||| Converts a relative path to an absolute path.
+|||
+||| @base the base directory
+||| @rel  the relative path to convert
+toAbsPath : (base : String) -> (rel : String) -> String
+toAbsPath base rel =
+  if isAbsPath rel then
+    rel
   else
-    joinPaths base given
+    joinPaths base rel
+
+
+||| Resolves an absolute path from a relative path.
+|||
+||| @rel  the relative path to convert
+resolveAbsPath : (rel : String) -> IO String
+resolveAbsPath rel = do
+  base <- currentDir
+  pure (toAbsPath base rel)
