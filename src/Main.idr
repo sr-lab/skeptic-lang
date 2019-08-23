@@ -5,8 +5,8 @@ import Language.JSON
 
 
 import Lists
-import IO
-import JSON
+import IOUtils
+import JSONUtils
 
 
 ||| Core type representing a power-law equation.
@@ -25,9 +25,11 @@ record Zipf where
 record Environment where
   ||| Creates an environment (context).
   |||
+  ||| @dir        the path of the current working directory
   ||| @equations  a key-value collection of power-law equations
   ||| @groups     a key-value collection of groups of power-law equations
   constructor MkEnvironment
+  dir : String
   equations : List (String, Zipf)
   groups : List (String, List (String, Zipf))
 
@@ -55,7 +57,7 @@ slope f a b = (abs ((comp f a) - (comp f b))) / (abs (a - b))
 ||| @name the name to add the equation under
 ||| @eq   the equation to add
 addZipf : (env : Environment) -> (name : String) -> (eq : Zipf) -> Environment
-addZipf env name eq = MkEnvironment ((name, eq) :: (equations env)) (groups env)
+addZipf env name eq = MkEnvironment (dir env) ((name, eq) :: (equations env)) (groups env)
 
 
 ||| Gets a named Zipf equation from an environment.
@@ -67,7 +69,7 @@ getZipf env name = lookup (equations env) name
 
 
 addGroup : (env : Environment) -> (name : String) -> Environment
-addGroup env name = MkEnvironment (equations env) ((name, []) :: (groups env))
+addGroup env name = MkEnvironment (dir env) (equations env) ((name, []) :: (groups env))
 
 
 getGroup : (env : Environment) -> (name : String) -> Maybe (List (String, Zipf))
@@ -75,7 +77,7 @@ getGroup env name = lookup (groups env) name
 
 
 rmGroup : (env : Environment) -> (name : String) -> Environment
-rmGroup env name = MkEnvironment (equations env) (filter (\(a, b) => a /= name) (groups env))
+rmGroup env name = MkEnvironment (dir env) (equations env) (filter (\(a, b) => a /= name) (groups env))
 
 
 
@@ -84,7 +86,7 @@ addToGroup env groupId eq eqId =
   case lookup (groups env) groupId of
     Just group =>
       let newGroup = ((eqId, eq) :: group) in
-      MkEnvironment (equations env) ((groupId, newGroup) :: (rmId (groups env) groupId))
+      MkEnvironment (dir env) (equations env) ((groupId, newGroup) :: (rmId (groups env) groupId))
     Nothing => env
 
 
@@ -123,7 +125,7 @@ skepticEvalLineTokens env tokens =
   ["zipf", amp, alpha, "as", name] =>
     pure (addZipf env name (MkZipf (cast amp) (cast alpha))) -- Declare Zipf equation directly.
   ["load", file, "as", name] => do
-    eq <- loadEq file
+    eq <- loadEq (joinPaths (dir env) file)
     case eq of
       Just eq' => pure (addZipf env name eq')
       Nothing => do
@@ -196,7 +198,9 @@ skepticEvalLines _ [] = pure ()
 ||| @path the lines to evaluate
 skepticEvalFile : (path : String) -> IO ()
 skepticEvalFile path = do
+  dir <- currentDir
   lines <- load_lines path
+  let absDirPath = toAbsPath dir (dirName path)
   case lines of
-    Just lines' => skepticEvalLines (MkEnvironment [] []) lines'
+    Just lines' => skepticEvalLines (MkEnvironment absDirPath [] []) lines'
     Nothing => putStrLn "File read error."

@@ -1,0 +1,6 @@
+# Here we're declaring some Zipf equations inline and binding them to a name.
+zipf 0.0011742221285749555 -0.6588793976685547 as 000webhostbasic8prop
+zipf 0.0009680954123045289 -0.6479434369803485 as 000webhostbasic8uni
+
+# Another assertion.
+assert 000webhostbasic8prop steeper 000webhostbasic8uni between 1 and 1000

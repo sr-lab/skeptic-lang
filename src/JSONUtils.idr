@@ -1,4 +1,7 @@
-module SkepticLang.JSON
+module SkepticLang.JSONUtils
+
+
+import Language.JSON
 
 
 %access public export
