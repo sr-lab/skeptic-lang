@@ -5,7 +5,8 @@ import Language.JSON
 
 
 import Lists
-import Io
+import IO
+import JSON
 
 
 ||| Core type representing a power-law equation.
@@ -20,18 +21,30 @@ record Zipf where
   alpha : Double
 
 
+||| Core type to carry environment (context) state.
 record Environment where
+  ||| Creates an environment (context).
+  |||
+  ||| @equations  a key-value collection of power-law equations
+  ||| @groups     a key-value collection of groups of power-law equations
   constructor MkEnvironment
   equations : List (String, Zipf)
   groups : List (String, List (String, Zipf))
 
 
+||| For a power-law equation, computes y for a given x.
+|||
+||| @f  the equation
+||| @x  the x-value
 comp : (f : Zipf) -> (x : Double) -> Double
 comp f x = (amp f) * (pow x (alpha f))
 
 
 ||| Computes the average slope of a function between two points.
-||| ...
+|||
+||| @f  the equation to compute for
+||| @a  the starting x-value
+||| @b  the ending x-value
 slope : (f : Zipf) -> (a : Double) -> (b : Double) -> Double
 slope f a b = (abs ((comp f a) - (comp f b))) / (abs (a - b))
 
@@ -73,19 +86,6 @@ addToGroup env groupId eq eqId =
       let newGroup = ((eqId, eq) :: group) in
       MkEnvironment (equations env) ((groupId, newGroup) :: (rmId (groups env) groupId))
     Nothing => env
-
-
-
-||| Gets the value of an attribute of a JSON object.
-|||
-||| @json the JSON object
-||| @key  the name of the attribute
-getObjAttr : (json : JSON) -> (key : String) -> Maybe JSON
-getObjAttr (JObject xs) key = getObjAttr' xs key where
-  getObjAttr' : (json : List (String, JSON)) -> (key : String) -> Maybe JSON
-  getObjAttr' ((a, b) :: xs) key = if a == key then Just b else getObjAttr' xs key
-  getObjAttr' [] _ = Nothing
-getObjAttr _ _  = Nothing
 
 
 ||| Loads a Zipf equation from a file.
@@ -180,9 +180,13 @@ skepticEvalLine env line =
         tokens => skepticEvalLineTokens env tokens
 
 
+||| Evaluates lines of Skeptic assertion code.
+|||
+||| @env    the envronment to evaluate in
+||| @lines  the lines to evaluate
 skepticEvalLines : (env : Environment) -> (lines : List String) -> IO ()
 skepticEvalLines env (line :: lines') = do
-  env' <- skepticEvalLine env line
+  env' <- skepticEvalLine env line -- Transform environment.
   skepticEvalLines env' lines'
 skepticEvalLines _ [] = pure ()
 

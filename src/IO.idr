@@ -1,4 +1,4 @@
-module SkepticLang.Io
+module SkepticLang.IO
 
 
 %access public export
