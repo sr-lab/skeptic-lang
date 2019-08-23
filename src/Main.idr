@@ -2,6 +2,7 @@ module SkepticLang.Main
 
 import Language.JSON
 
+
 ||| Loads lines from a text file.
 ||| @path   the path to the file
 load_lines : (path : String) -> IO (Maybe (List String))
@@ -10,6 +11,24 @@ load_lines path = do
   case txt of
     Right txt' => pure (Just (lines txt'))
     _ => pure Nothing
+
+
+||| Looks up a value by key in a list of key-value pairs.
+|||
+||| @pairs  the list of key-value pairs
+||| @key    the key to look up
+lookup : Eq a => (pairs : List (a, b)) -> (key : a) -> Maybe b
+lookup [] _ = Nothing
+lookup ((a, b) :: pairs') key = if a == key then Just b else lookup pairs' key
+
+
+||| Removes an entry from a list of key-value pairs, if an entry with that key exists.
+|||
+||| @pairs  the list of key-value pairs
+||| @key    the key of the item to remove
+rmId : Eq a => (pairs : List (a, b)) -> (key : a) -> List (a, b)
+rmId [] _ = []
+rmId ((a, b) :: pairs') key = if a == key then rmId pairs' key else (a, b) :: rmId pairs' key
 
 
 ||| Core type representing a power-law equation.
@@ -24,24 +43,10 @@ record Zipf where
   alpha : Double
 
 
-||| A collection of cases for a fitlered dataset.
-public export
-record CaseCollection where
-  ||| Creates a case collection.
-  |||
-  ||| @worst    the equation representing the worst-case distribution
-  ||| @average  the equation representing the average-case distribution
-  ||| @best     the equation representing the best-case distribution
-  constructor MkCaseCollection
-  worst : Zipf
-  average : Zipf
-  best : Zipf
-
-
 record Environment where
   constructor MkEnvironment
   equations : List (String, Zipf)
-  caseCollections : List (String, CaseCollection)
+  groups : List (String, List (String, Zipf))
 
 
 comp : (f : Zipf) -> (x : Double) -> Double
@@ -54,25 +59,13 @@ slope : (f : Zipf) -> (a : Double) -> (b : Double) -> Double
 slope f a b = (abs ((comp f a) - (comp f b))) / (abs (a - b))
 
 
-||| If slope is shallower, the distribution is more uniform so the policy is better.
-public export
-better : Double -> Double -> Bool
-better x y = x < y
-
-
-||| If slope is steeper, the distribution is less uniform so the policy is worse.
-public export
-worse : Double -> Double -> Bool
-worse x y = x > y
-
-
 ||| Adds a Zipf equation to the environment.
 |||
 ||| @env  the environment to add the equation to
 ||| @name the name to add the equation under
 ||| @eq   the equation to add
 addZipf : (env : Environment) -> (name : String) -> (eq : Zipf) -> Environment
-addZipf env name eq = MkEnvironment ((name, eq) :: (equations env)) (caseCollections env)
+addZipf env name eq = MkEnvironment ((name, eq) :: (equations env)) (groups env)
 
 
 ||| Gets a named Zipf equation from an environment.
@@ -80,12 +73,36 @@ addZipf env name eq = MkEnvironment ((name, eq) :: (equations env)) (caseCollect
 ||| @env  the environment to get the equation from
 ||| @name the name of the equation to get
 getZipf : (env : Environment) -> (name : String) -> Maybe Zipf
-getZipf env name = getZipf' (equations env) name where
-  getZipf' : (eqs : List (String, Zipf)) -> (nn : String) -> Maybe Zipf
-  getZipf' [] _ = Nothing
-  getZipf' ((nm, eq) :: eqs') nn = if nm == nn then (Just eq) else getZipf' eqs' nn
+getZipf env name = lookup (equations env) name
 
 
+addGroup : (env : Environment) -> (name : String) -> Environment
+addGroup env name = MkEnvironment (equations env) ((name, []) :: (groups env))
+
+
+getGroup : (env : Environment) -> (name : String) -> Maybe (List (String, Zipf))
+getGroup env name = lookup (groups env) name
+
+
+rmGroup : (env : Environment) -> (name : String) -> Environment
+rmGroup env name = MkEnvironment (equations env) (filter (\(a, b) => a /= name) (groups env))
+
+
+
+addToGroup : (env : Environment) -> (groupId : String) -> (eq : Zipf) -> (eqId : String) -> Environment
+addToGroup env groupId eq eqId =
+  case lookup (groups env) groupId of
+    Just group =>
+      let newGroup = ((eqId, eq) :: group) in
+      MkEnvironment (equations env) ((groupId, newGroup) :: (rmId (groups env) groupId))
+    Nothing => env
+
+
+
+||| Gets the value of an attribute of a JSON object.
+|||
+||| @json the JSON object
+||| @key  the name of the attribute
 getObjAttr : (json : JSON) -> (key : String) -> Maybe JSON
 getObjAttr (JObject xs) key = getObjAttr' xs key where
   getObjAttr' : (json : List (String, JSON)) -> (key : String) -> Maybe JSON
@@ -94,6 +111,9 @@ getObjAttr (JObject xs) key = getObjAttr' xs key where
 getObjAttr _ _  = Nothing
 
 
+||| Loads a Zipf equation from a file.
+|||
+||| @path the file from which to load the equation
 loadEq : (path : String) -> IO (Maybe Zipf)
 loadEq path = do
   txt <- readFile path
@@ -106,14 +126,25 @@ loadEq path = do
     _ => pure Nothing
 
 
-||| Evaluates a line of Skeptic assertion code.
+||| Returns a function defining a relation between numbers from a name.
 |||
-||| @env  the environment to evaluate in
-||| @line the line to evaluate
-skepticEvalLineTokens : (env : Environment) -> (line : List String) -> IO Environment
-skepticEvalLineTokens env line =
-  case line of
-  ["zipf", amp, alpha, "as", name] => pure (addZipf env name (MkZipf (cast amp) (cast alpha))) -- Declare Zipf equation directly.
+||| @name the name to use for the lookup
+getRelation : (name : String) -> Maybe (Double -> Double -> Bool)
+getRelation name = case name of
+  "shallower" => Just (>)
+  "steeper" => Just (<)
+  _ => Nothing
+
+
+||| Evaluates a tokenized line of Skeptic assertion code.
+|||
+||| @env    the environment to evaluate in
+||| @tokens the tokens to evaluate
+skepticEvalLineTokens : (env : Environment) -> (tokens : List String) -> IO Environment
+skepticEvalLineTokens env tokens =
+  case tokens of
+  ["zipf", amp, alpha, "as", name] =>
+    pure (addZipf env name (MkZipf (cast amp) (cast alpha))) -- Declare Zipf equation directly.
   ["load", file, "as", name] => do
     eq <- loadEq file
     case eq of
@@ -121,13 +152,29 @@ skepticEvalLineTokens env line =
       Nothing => do
         putStrLn "Could not load equation."
         pure env
-  ["assert", x, "shallower", y, "between", a, "and", b] => do
-    case (getZipf env x, getZipf env y) of -- Look up equations.
-      (Just x', Just y') =>
-        if slope x' (cast a) (cast b) > slope y' (cast a) (cast b) then
+  ["group", name] => pure (addGroup env name)
+  ["add", eq, "to", gr, "as", name] =>
+    case (getZipf env eq) of
+      Just z => pure (addToGroup env gr z name)
+  ["assert", x, r, y, "between", a, "and", b] => do
+    case (getZipf env x, getZipf env y, getRelation r) of -- Look up equations.
+      (Just x', Just y', Just r') =>
+        if r' (slope x' (cast a) (cast b)) (slope y' (cast a) (cast b)) then
           putStrLn "Could not assert this."
         else
           putStrLn "Successfully asserted this."
+      _ => putStrLn "Equation error."
+    pure env
+  ["assert", bx, x, r, by, y, "between", a, "and", b] => do
+    case (getGroup env x, getGroup env y, getRelation r) of -- Look up equations.
+      (Just x', Just y', Just r') =>
+        case (lookup x' bx, lookup y' by) of
+          (Just xx', Just yy') =>
+            if r' (slope xx' (cast a) (cast b)) (slope yy' (cast a) (cast b)) then
+              putStrLn "Could not assert this."
+            else
+              putStrLn "Successfully asserted this."
+          _ => putStrLn "ERR"
       _ => putStrLn "Equation error."
     pure env
   _ => do
@@ -135,6 +182,9 @@ skepticEvalLineTokens env line =
     pure env
 
 
+||| Remvoes empty strings from a list.
+|||
+||| @tokens the list to filter
 stripEmptyTokens : (tokens : List String) -> List String
 stripEmptyTokens tokens = filter (\x => length x > 0) tokens
 
@@ -149,7 +199,7 @@ skepticEvalLine env line =
     ('#' :: _) => pure env -- Ignore comments.
     _ =>
       case stripEmptyTokens (split (== ' ') line) of -- Split along spaces to create token list.
-        [] => pure env -- Blank line.
+        [] => pure env -- Ignore blank lines.
         tokens => skepticEvalLineTokens env tokens
 
 
@@ -160,9 +210,12 @@ skepticEvalLines env (line :: lines') = do
 skepticEvalLines _ [] = pure ()
 
 
-skepticEvalFile : (file : String) -> IO ()
-skepticEvalFile file = do
-  lines <- load_lines file
+||| Evaluates a file of Skeptic assertion code.
+|||
+||| @path the lines to evaluate
+skepticEvalFile : (path : String) -> IO ()
+skepticEvalFile path = do
+  lines <- load_lines path
   case lines of
     Just lines' => skepticEvalLines (MkEnvironment [] []) lines'
     Nothing => putStrLn "File read error."
