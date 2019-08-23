@@ -1,34 +1,11 @@
 module SkepticLang.Main
 
+
 import Language.JSON
 
 
-||| Loads lines from a text file.
-||| @path   the path to the file
-load_lines : (path : String) -> IO (Maybe (List String))
-load_lines path = do
-  txt <- readFile path
-  case txt of
-    Right txt' => pure (Just (lines txt'))
-    _ => pure Nothing
-
-
-||| Looks up a value by key in a list of key-value pairs.
-|||
-||| @pairs  the list of key-value pairs
-||| @key    the key to look up
-lookup : Eq a => (pairs : List (a, b)) -> (key : a) -> Maybe b
-lookup [] _ = Nothing
-lookup ((a, b) :: pairs') key = if a == key then Just b else lookup pairs' key
-
-
-||| Removes an entry from a list of key-value pairs, if an entry with that key exists.
-|||
-||| @pairs  the list of key-value pairs
-||| @key    the key of the item to remove
-rmId : Eq a => (pairs : List (a, b)) -> (key : a) -> List (a, b)
-rmId [] _ = []
-rmId ((a, b) :: pairs') key = if a == key then rmId pairs' key else (a, b) :: rmId pairs' key
+import Lists
+import Io
 
 
 ||| Core type representing a power-law equation.
