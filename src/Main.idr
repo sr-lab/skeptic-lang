@@ -68,26 +68,38 @@ getZipf : (env : Environment) -> (name : String) -> Maybe Zipf
 getZipf env name = lookup (equations env) name
 
 
+||| Adds an empty group to an environment.
+|||
+||| @env  the environment to add the group to
+||| @name the name for the new group
 addGroup : (env : Environment) -> (name : String) -> Environment
 addGroup env name = MkEnvironment (dir env) (equations env) ((name, []) :: (groups env))
 
 
+||| Gets a group from an envionment by name.
+|||
+||| @env  the environment to get the group from
+||| @name the name of the group to get
 getGroup : (env : Environment) -> (name : String) -> Maybe (List (String, Zipf))
 getGroup env name = lookup (groups env) name
 
 
-rmGroup : (env : Environment) -> (name : String) -> Environment
-rmGroup env name = MkEnvironment (dir env) (equations env) (filter (\(a, b) => a /= name) (groups env))
+||| Deletes a group from an environment by name
+|||
+||| @env  the environment to delete the group from
+||| @name the name of the group to delete
+removeGroup : (env : Environment) -> (name : String) -> Environment
+removeGroup env name = MkEnvironment (dir env) (equations env) (filter (\(a, b) => a /= name) (groups env))
 
 
 
-addToGroup : (env : Environment) -> (groupId : String) -> (eq : Zipf) -> (eqId : String) -> Environment
+addToGroup : (env : Environment) -> (groupId : String) -> (eq : Zipf) -> (eqId : String) -> Maybe Environment
 addToGroup env groupId eq eqId =
   case lookup (groups env) groupId of
     Just group =>
       let newGroup = ((eqId, eq) :: group) in
-      MkEnvironment (dir env) (equations env) ((groupId, newGroup) :: (rmId (groups env) groupId))
-    Nothing => env
+      Just (MkEnvironment (dir env) (equations env) ((groupId, newGroup) :: (remove (groups env) groupId)))
+    _ => Nothing
 
 
 ||| Loads a Zipf equation from a file.
@@ -125,12 +137,16 @@ printRanked group a b =
   putStrLn (unwords (map (\(name, val) => name) sorted))
 
 
+printError : (line : Nat) -> (msg : String) -> IO ()
+printError line msg = putStrLn $ "Error on line " ++ cast line ++ ": " ++ msg
+
+
 ||| Evaluates a tokenized line of Skeptic assertion code.
 |||
 ||| @env    the environment to evaluate in
 ||| @tokens the tokens to evaluate
-skepticEvalLineTokens : (env : Environment) -> (tokens : List String) -> IO Environment
-skepticEvalLineTokens env tokens =
+skepticEvalLineTokens : (env : Environment) -> (tokens : List String) -> (lnum : Nat) -> IO Environment
+skepticEvalLineTokens env tokens lnum =
   case tokens of
   ["zipf", amp, alpha, "as", name] =>
     pure (addZipf env name (MkZipf (cast amp) (cast alpha))) -- Declare Zipf equation directly.
@@ -139,12 +155,20 @@ skepticEvalLineTokens env tokens =
     case eq of
       Just eq' => pure (addZipf env name eq')
       Nothing => do
-        putStrLn "Could not load equation."
+        printError lnum $ "Could not load equation at " ++ file
         pure env
   ["group", name] => pure (addGroup env name)
-  ["add", eq, "to", gr, "as", name] =>
-    case (getZipf env eq) of
-      Just z => pure (addToGroup env gr z name)
+  ["add", eq, "to", gr, "as", name] => do
+    case getZipf env eq of
+      Just z =>
+        case (addToGroup env gr z name) of
+          Just env' => pure env'
+          _ => do
+            printError lnum $ "Group " ++ gr ++ " not found."
+            pure env -- Environment unchanged.
+      _ => do
+        printError lnum $ "Equation " ++ eq ++ " not found."
+        pure env -- Environment unchanged.
   ["assert", x, r, y, "between", a, "and", b] => do
     case (getZipf env x, getZipf env y, getRelation r) of -- Look up equations.
       (Just x', Just y', Just r') =>
@@ -187,25 +211,25 @@ stripEmptyTokens tokens = filter (\x => length x > 0) tokens
 |||
 ||| @env  the environment to evaluate in
 ||| @line the line to evaluate
-skepticEvalLine : (env : Environment) -> (line : String) -> IO Environment
-skepticEvalLine env line =
+skepticEvalLine : (env : Environment) -> (line : String) -> (lnum : Nat) -> IO Environment
+skepticEvalLine env line lnum =
   case unpack line of
     ('#' :: _) => pure env -- Ignore comments.
     _ =>
       case stripEmptyTokens (split (== ' ') line) of -- Split along spaces to create token list.
         [] => pure env -- Ignore blank lines.
-        tokens => skepticEvalLineTokens env tokens
+        tokens => skepticEvalLineTokens env tokens lnum
 
 
 ||| Evaluates lines of Skeptic assertion code.
 |||
 ||| @env    the envronment to evaluate in
 ||| @lines  the lines to evaluate
-skepticEvalLines : (env : Environment) -> (lines : List String) -> IO ()
-skepticEvalLines env (line :: lines') = do
-  env' <- skepticEvalLine env line -- Transform environment.
-  skepticEvalLines env' lines'
-skepticEvalLines _ [] = pure ()
+skepticEvalLines : (env : Environment) -> (lines : List String) -> (lnum : Nat) -> IO ()
+skepticEvalLines env (line :: lines') lnum = do
+  env' <- skepticEvalLine env line lnum -- Transform environment.
+  skepticEvalLines env' lines' (lnum + 1)
+skepticEvalLines _ [] _ = pure ()
 
 
 ||| Evaluates a file of Skeptic assertion code.
@@ -216,5 +240,5 @@ skepticEvalFile path = do
   absDirPath <- resolveAbsPath (dirName path)
   lines <- loadLines path
   case lines of
-    Just lines' => skepticEvalLines (MkEnvironment absDirPath [] []) lines'
+    Just lines' => skepticEvalLines (MkEnvironment absDirPath [] []) lines' 1
     Nothing => putStrLn "File read error."
