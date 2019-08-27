@@ -115,6 +115,16 @@ getRelation name = case name of
   _ => Nothing
 
 
+comparePair : (x : (String, Double)) -> (y : (String, Double)) -> Ordering
+comparePair (_, x') (_, y') = compare x' y'
+
+printRanked : (group : List (String, Zipf)) -> (a : Double) -> (b : Double) -> IO ()
+printRanked group a b =
+  let vals = map (\(name, eq) => (name, slope eq a b)) group in
+  let sorted = sortBy comparePair vals in
+  putStrLn (unwords (map (\(name, val) => name) sorted))
+
+
 ||| Evaluates a tokenized line of Skeptic assertion code.
 |||
 ||| @env    the environment to evaluate in
@@ -155,6 +165,11 @@ skepticEvalLineTokens env tokens =
               putStrLn "Successfully asserted this."
           _ => putStrLn "ERR"
       _ => putStrLn "Equation error."
+    pure env
+  ["rank", group, "between", a, "and", b] => do
+    case getGroup env group of
+      Just g =>
+        printRanked g (cast a) (cast b)
     pure env
   _ => do
     putStrLn "Parse error."
