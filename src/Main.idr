@@ -4,7 +4,8 @@ module SkepticLang.Main
 import Language.JSON
 
 
-import Lists
+import ListUtils
+import PairUtils
 import IOUtils
 import JSONUtils
 
@@ -21,7 +22,26 @@ record Zipf where
   alpha : Double
 
 
+||| Represents a named power-law equation.
+public export
+NamedZipf : Type
+NamedZipf = (String, Zipf)
+
+
+||| Represents a group of named power-law equations.
+public export
+Group : Type
+Group = List NamedZipf
+
+
+||| Represents a named group of named power-law equations.
+public export
+NamedGroup : Type
+NamedGroup = (String, Group)
+
+
 ||| Core type to carry environment (context) state.
+public export
 record Environment where
   ||| Creates an environment (context).
   |||
@@ -30,8 +50,14 @@ record Environment where
   ||| @groups     a key-value collection of groups of power-law equations
   constructor MkEnvironment
   dir : String
-  equations : List (String, Zipf)
-  groups : List (String, List (String, Zipf))
+  equations : List NamedZipf
+  groups : List NamedGroup
+
+
+||| Represents a named slope calculated from a named power-law equation.
+public export
+NamedSlope : Type
+NamedSlope = (String, Double)
 
 
 ||| For a power-law equation, computes y for a given x.
@@ -44,11 +70,20 @@ comp f x = (amp f) * (pow x (alpha f))
 
 ||| Computes the average slope of a function between two points.
 |||
-||| @f  the equation to compute for
 ||| @a  the starting x-value
 ||| @b  the ending x-value
-slope : (f : Zipf) -> (a : Double) -> (b : Double) -> Double
-slope f a b = (abs ((comp f a) - (comp f b))) / (abs (a - b))
+||| @z  the equation to compute for
+slope : (a : Double) -> (b : Double) -> (z : Zipf) -> Double
+slope a b z = (abs ((comp z a) - (comp z b))) / (abs (a - b))
+
+
+||| Computes a named average slope of a named function between two points.
+|||
+||| @a  the starting x-value
+||| @b  the ending x-value
+||| @z  the named equation to compute for
+namedSlope : (a : Double) -> (b : Double) -> (z : NamedZipf) -> NamedSlope
+namedSlope a b (n, f) = (n, slope a b f)
 
 
 ||| Adds a Zipf equation to the environment.
@@ -60,7 +95,7 @@ addZipf : (env : Environment) -> (name : String) -> (eq : Zipf) -> Environment
 addZipf env name eq = MkEnvironment (dir env) ((name, eq) :: (equations env)) (groups env)
 
 
-||| Gets a named Zipf equation from an environment.
+||| Gets a named Zipf equation from an environment by name.
 |||
 ||| @env  the environment to get the equation from
 ||| @name the name of the equation to get
@@ -80,25 +115,22 @@ addGroup env name = MkEnvironment (dir env) (equations env) ((name, []) :: (grou
 |||
 ||| @env  the environment to get the group from
 ||| @name the name of the group to get
-getGroup : (env : Environment) -> (name : String) -> Maybe (List (String, Zipf))
+getGroup : (env : Environment) -> (name : String) -> Maybe Group
 getGroup env name = lookup (groups env) name
 
 
-||| Deletes a group from an environment by name
+||| Adds a named equation to a named group in an environment.
 |||
-||| @env  the environment to delete the group from
-||| @name the name of the group to delete
-removeGroup : (env : Environment) -> (name : String) -> Environment
-removeGroup env name = MkEnvironment (dir env) (equations env) (filter (\(a, b) => a /= name) (groups env))
-
-
-
-addToGroup : (env : Environment) -> (groupId : String) -> (eq : Zipf) -> (eqId : String) -> Maybe Environment
-addToGroup env groupId eq eqId =
-  case lookup (groups env) groupId of
+||| @env        the environment to add the equation to
+||| @groupName  the name of the group to add the equation to
+||| @eq         the equation to add to the group
+||| @eqName     the name within the group to bind the equation to
+addToGroup : (env : Environment) -> (groupName : String) -> (eq : Zipf) -> (eqName : String) -> Maybe Environment
+addToGroup env groupName eq eqName =
+  case lookup (groups env) groupName of
     Just group =>
-      let newGroup = ((eqId, eq) :: group) in
-      Just (MkEnvironment (dir env) (equations env) ((groupId, newGroup) :: (remove (groups env) groupId)))
+      let newGroup = ((eqName, eq) :: group) in
+      Just (MkEnvironment (dir env) (equations env) ((groupName, newGroup) :: (groups env)))
     _ => Nothing
 
 
@@ -113,7 +145,7 @@ loadEq path = do
       Just json => case (getObjAttr json "amp", getObjAttr json "alpha") of
         (Just (JNumber amp), Just (JNumber alpha)) => pure (Just (MkZipf amp alpha))
         _ => pure Nothing
-      Nothing => pure Nothing
+      _ => pure Nothing
     _ => pure Nothing
 
 
@@ -127,16 +159,22 @@ getRelation name = case name of
   _ => Nothing
 
 
-comparePair : (x : (String, Double)) -> (y : (String, Double)) -> Ordering
-comparePair (_, x') (_, y') = compare x' y'
-
-printRanked : (group : List (String, Zipf)) -> (a : Double) -> (b : Double) -> IO ()
+||| Ranks equations in a group.
+|||
+||| @group  the group to rank
+||| @a      the starting guess number
+||| @b      the ending guess number
+printRanked : (group : Group) -> (a : Double) -> (b : Double) -> IO ()
 printRanked group a b =
-  let vals = map (\(name, eq) => (name, slope eq a b)) group in
-  let sorted = sortBy comparePair vals in
-  putStrLn (unwords (map (\(name, val) => name) sorted))
+  let vals = map (namedSlope a b) group in -- Equations to values.
+  let sorted = sortBy compareSnd vals in -- Sort pairs by values.
+  putStrLn (unwords (map (\(name, val) => name) sorted)) -- TODO: Prettier printing.
 
 
+||| Prints an error message.
+|||
+||| @line the line number at which the error occurred
+||| @msg  the message to show
 printError : (line : Nat) -> (msg : String) -> IO ()
 printError line msg = putStrLn $ "Error on line " ++ cast line ++ ": " ++ msg
 
@@ -149,22 +187,24 @@ skepticEvalLineTokens : (env : Environment) -> (tokens : List String) -> (lnum :
 skepticEvalLineTokens env tokens lnum =
   case tokens of
   ["zipf", amp, alpha, "as", name] =>
-    pure (addZipf env name (MkZipf (cast amp) (cast alpha))) -- Declare Zipf equation directly.
+    pure $ addZipf env name $ MkZipf (cast amp) (cast alpha) -- Declare Zipf equation directly.
   ["load", file, "as", name] => do
-    eq <- loadEq (joinPaths (dir env) file)
+    eq <- loadEq $ joinPaths (dir env) file
     case eq of
-      Just eq' => pure (addZipf env name eq')
+      Just eq' => pure $ addZipf env name eq'
       Nothing => do
-        printError lnum $ "Could not load equation at " ++ file
+        printError lnum $ "Could not load equation file at " ++ file
         pure env
-  ["group", name] => pure (addGroup env name)
-  ["add", eq, "to", gr, "as", name] => do
+  ["group", name] =>
+    pure $ addGroup env name
+  ["add", eq, "to", group, "as", name] => do
     case getZipf env eq of
-      Just z =>
-        case (addToGroup env gr z name) of
-          Just env' => pure env'
+      Just eq' =>
+        case addToGroup env group eq' name of
+          Just env' =>
+            pure env' -- Environment changed.
           _ => do
-            printError lnum $ "Group " ++ gr ++ " not found."
+            printError lnum $ "Group " ++ group ++ " not found."
             pure env -- Environment unchanged.
       _ => do
         printError lnum $ "Equation " ++ eq ++ " not found."
@@ -172,10 +212,10 @@ skepticEvalLineTokens env tokens lnum =
   ["assert", x, r, y, "between", a, "and", b] => do
     case (getZipf env x, getZipf env y, getRelation r) of -- Look up equations.
       (Just x', Just y', Just r') =>
-        if r' (slope x' (cast a) (cast b)) (slope y' (cast a) (cast b)) then
-          putStrLn "Could not assert this."
+        if r' (slope (cast a) (cast b) x') (slope (cast a) (cast b) y') then
+          printError lnum $ unwords ["Failed to assert that", x, "is", r, "than", y, "between", a, "and", b]
         else
-          putStrLn "Successfully asserted this."
+          pure () -- No output means success.
       _ => putStrLn "Equation error."
     pure env
   ["assert", bx, x, r, by, y, "between", a, "and", b] => do
@@ -183,20 +223,22 @@ skepticEvalLineTokens env tokens lnum =
       (Just x', Just y', Just r') =>
         case (lookup x' bx, lookup y' by) of
           (Just xx', Just yy') =>
-            if r' (slope xx' (cast a) (cast b)) (slope yy' (cast a) (cast b)) then
-              putStrLn "Could not assert this."
+            if r' (slope (cast a) (cast b) xx') (slope (cast a) (cast b) yy') then
+              printError lnum $ unwords ["Failed to assert that", bx, x, "is", r, "than", by, y, "between", a, "and", b]
             else
-              putStrLn "Successfully asserted this."
-          _ => putStrLn "ERR"
+              pure () -- No output means success.
+          _ => putStrLn "ERR" -- TODO: Opportunity for better error messages.
       _ => putStrLn "Equation error."
     pure env
   ["rank", group, "between", a, "and", b] => do
     case getGroup env group of
-      Just g =>
-        printRanked g (cast a) (cast b)
+      Just group' =>
+        printRanked group' (cast a) (cast b)
+      _ =>
+        printError lnum $ "No such group as " ++ group
     pure env
   _ => do
-    putStrLn "Parse error."
+    printError lnum $ "Failed to parse line."
     pure env
 
 
@@ -211,24 +253,26 @@ stripEmptyTokens tokens = filter (\x => length x > 0) tokens
 |||
 ||| @env  the environment to evaluate in
 ||| @line the line to evaluate
-skepticEvalLine : (env : Environment) -> (line : String) -> (lnum : Nat) -> IO Environment
-skepticEvalLine env line lnum =
+||| @lineNum  the current line number for reporting purposes
+skepticEvalLine : (env : Environment) -> (line : String) -> (lineNum : Nat) -> IO Environment
+skepticEvalLine env line lineNum =
   case unpack line of
     ('#' :: _) => pure env -- Ignore comments.
     _ =>
       case stripEmptyTokens (split (== ' ') line) of -- Split along spaces to create token list.
         [] => pure env -- Ignore blank lines.
-        tokens => skepticEvalLineTokens env tokens lnum
+        tokens => skepticEvalLineTokens env tokens lineNum -- Run line.
 
 
 ||| Evaluates lines of Skeptic assertion code.
 |||
-||| @env    the envronment to evaluate in
-||| @lines  the lines to evaluate
-skepticEvalLines : (env : Environment) -> (lines : List String) -> (lnum : Nat) -> IO ()
-skepticEvalLines env (line :: lines') lnum = do
-  env' <- skepticEvalLine env line lnum -- Transform environment.
-  skepticEvalLines env' lines' (lnum + 1)
+||| @env      the envronment to evaluate in
+||| @lines    the lines to evaluate
+||| @lineNum  the current line number for reporting purposes
+skepticEvalLines : (env : Environment) -> (lines : List String) -> (lineNum : Nat) -> IO ()
+skepticEvalLines env (line :: lines') lineNum = do
+  env' <- skepticEvalLine env line lineNum -- Transform environment with current line.
+  skepticEvalLines env' lines' $ lineNum + 1 -- Next line.
 skepticEvalLines _ [] _ = pure ()
 
 
@@ -237,8 +281,8 @@ skepticEvalLines _ [] _ = pure ()
 ||| @path the lines to evaluate
 skepticEvalFile : (path : String) -> IO ()
 skepticEvalFile path = do
-  absDirPath <- resolveAbsPath (dirName path)
-  lines <- loadLines path
+  absDirPath <- resolveAbsPath (dirName path) -- Absolute directory path needed.
+  lines <- loadLines path -- Load entire source file.
   case lines of
-    Just lines' => skepticEvalLines (MkEnvironment absDirPath [] []) lines' 1
-    Nothing => putStrLn "File read error."
+    Just lines' => skepticEvalLines (MkEnvironment absDirPath [] []) lines' 1 -- New environment, start line 1.
+    Nothing => putStrLn $ "Error: Could not read file at " ++ path -- File read error.

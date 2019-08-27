@@ -1,4 +1,4 @@
-module SkepticLang.Lists
+module SkepticLang.ListUtils
 
 
 %access public export
