@@ -82,5 +82,5 @@ add yb12prop to yahoo as b12
 assert b8 yahoo steeper b12 yahoo between 1 and 100
 ```
 
-# Ranking `ranking.sk`
+### Ranking `ranking.sk`
 Demonstrates ranking a group using the `rank` keyword.
