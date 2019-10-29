@@ -3,6 +3,11 @@ Skeptic Password Composition Policy Assertion Language. A DSL for asserting pass
 
 ![Logo](assets/logo-text-h.svg)
 
+## Overview
+The Skeptic Password composition Policy Assertion Language (PaCPAL) sits on top of the output produced by [Pyrrho](https://github.com/sr-lab/pyrrho) from a [Skeptic Authority](https://github.com/sr-lab/skeptic-authority-template) and a large password dataset, to provide a facility for easy extraction of results.
+
+At its core, its a language for creating, grouping, ranking and comparing the slopes (i.e. the uniformity) of password probability distributions interpolated as power-law equations.
+
 ## Examples
 A few examples are provided in the `./examples` folder. These demonstrate different aspects of PaCPAL and are as follows:
 
