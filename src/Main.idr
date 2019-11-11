@@ -168,7 +168,7 @@ printRanked : (group : Group) -> (a : Double) -> (b : Double) -> IO ()
 printRanked group a b =
   let vals = map (namedSlope a b) group in -- Equations to values.
   let sorted = sortBy compareSnd vals in -- Sort pairs by values.
-  putStrLn (unwords (map (\(name, val) => name) sorted)) -- TODO: Prettier printing.
+  putStrLn (unwords (map (\(name, val) => name ++ ": " ++ cast val ++ "\n") sorted)) -- TODO: Prettier printing.
 
 
 ||| Prints an error message.
