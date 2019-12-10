@@ -243,6 +243,9 @@ skepticEvalLineTokens env tokens lnum =
       _ =>
         printError lnum $ "No such group as " ++ group
     pure env
+  "say" :: tokens' => do
+    putStrLn (unwords tokens')
+    pure env
   _ => do
     printError lnum $ "Failed to parse line."
     pure env
