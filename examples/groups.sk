@@ -8,4 +8,4 @@ add yb8prop to yahoo as b8
 add yb12prop to yahoo as b12
 
 # Assert using groups.
-assert b8 yahoo steeper b12 yahoo between 1 and 100
+assert b8 yahoo steeper b12 yahoo

@@ -154,8 +154,8 @@ loadEq path = do
 ||| @name the name to use for the lookup
 getRelation : (name : String) -> Maybe (Double -> Double -> Bool)
 getRelation name = case name of
-  "shallower" => Just (>)
-  "steeper" => Just (<)
+  "shallower" => Just (<)
+  "steeper" => Just (>)
   _ => Nothing
 
 
@@ -169,6 +169,12 @@ printRanked group a b =
   let vals = map (namedSlope a b) group in -- Equations to values.
   let sorted = sortBy compareSnd vals in -- Sort pairs by values.
   putStrLn (unwords (map (\(name, val) => name ++ ": " ++ cast val ++ "\n") sorted)) -- TODO: Prettier printing.
+
+
+printRankedAlpha : (group : Group) -> IO ()
+printRankedAlpha group =
+  let sorted = sortBy (\a, b => compare (alpha (snd a)) (alpha (snd b))) group in -- Sort pairs by values.
+  putStrLn (unwords (map (\(name, val) => name) sorted)) -- TODO: Prettier printing.
 
 
 ||| Prints an error message.
@@ -209,31 +215,31 @@ skepticEvalLineTokens env tokens lnum =
       _ => do
         printError lnum $ "Equation " ++ eq ++ " not found."
         pure env -- Environment unchanged.
-  ["assert", x, r, y, "between", a, "and", b] => do
+  ["assert", x, r, y] => do
     case (getZipf env x, getZipf env y, getRelation r) of -- Look up equations.
       (Just x', Just y', Just r') =>
-        if r' (slope (cast a) (cast b) x') (slope (cast a) (cast b) y') then
-          printError lnum $ unwords ["Failed to assert that", x, "is", r, "than", y, "between", a, "and", b]
+        if r' (alpha x') (alpha y') then
+          printError lnum $ unwords ["Failed to assert that", x, "is", r, "than", y]
         else
           pure () -- No output means success.
       _ => putStrLn "Equation error."
     pure env
-  ["assert", bx, x, r, by, y, "between", a, "and", b] => do
+  ["assert", bx, x, r, by, y] => do
     case (getGroup env x, getGroup env y, getRelation r) of -- Look up equations.
       (Just x', Just y', Just r') =>
         case (lookup x' bx, lookup y' by) of
           (Just xx', Just yy') =>
-            if r' (slope (cast a) (cast b) xx') (slope (cast a) (cast b) yy') then
-              printError lnum $ unwords ["Failed to assert that", bx, x, "is", r, "than", by, y, "between", a, "and", b]
+            if r' (alpha xx') (alpha yy') then
+              printError lnum $ unwords ["Failed to assert that", bx, x, "is", r, "than", by, y]
             else
               pure () -- No output means success.
           _ => putStrLn "ERR" -- TODO: Opportunity for better error messages.
       _ => putStrLn "Equation error."
     pure env
-  ["rank", group, "between", a, "and", b] => do
+  ["rank", group] => do
     case getGroup env group of
       Just group' =>
-        printRanked group' (cast a) (cast b)
+        printRankedAlpha group'
       _ =>
         printError lnum $ "No such group as " ++ group
     pure env

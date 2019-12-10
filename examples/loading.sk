@@ -3,4 +3,4 @@ load equations/yahoo-basic6_basic8_proportional.json as yb8prop
 load equations/yahoo-basic6_basic12_proportional.json as yb12prop
 
 # Another assertion.
-assert yb8prop steeper yb12prop between 1 and 1000
+assert yb8prop steeper yb12prop
